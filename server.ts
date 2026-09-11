@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
@@ -404,7 +405,8 @@ let ACTIVITIES = [
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
+  const HOST = process.env.HOST || '0.0.0.0';
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -1095,8 +1097,51 @@ ${question}
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  const pidPath = path.join(process.cwd(), '.server.pid');
+  try {
+    fs.writeFileSync(pidPath, process.pid.toString(), 'utf-8');
+  } catch (err) {
+    console.warn('無法寫入 .server.pid 檔案:', err);
+  }
+
+  const cleanupPid = () => {
+    try {
+      if (fs.existsSync(pidPath)) {
+        fs.unlinkSync(pidPath);
+      }
+    } catch {}
+  };
+
+  process.on('SIGINT', () => {
+    cleanupPid();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    cleanupPid();
+    process.exit(0);
+  });
+  process.on('exit', () => {
+    cleanupPid();
+  });
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`\n======================================================`);
+    console.log(` 🚀 營建機電工程專案管理系統 (REI) 本地伺服器已成功啟動！`);
+    console.log(` 🌐 本機訪問網址:   http://localhost:${PORT}`);
+    console.log(` 🌐 局域網路網址:   http://127.0.0.1:${PORT}`);
+    console.log(` 📌 行程 PID:       ${process.pid}`);
+    console.log(`======================================================\n`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ 錯誤: 通訊埠 ${PORT} 已被其他程式佔用！`);
+      console.error(`💡 解決建議: 請執行 stop_server.bat 或更換 .env 中的 PORT 設定。\n`);
+    } else {
+      console.error('伺服器發生異常:', err);
+    }
+    cleanupPid();
+    process.exit(1);
   });
 }
 
